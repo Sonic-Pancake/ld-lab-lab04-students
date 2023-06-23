@@ -1,0 +1,130 @@
+name: Push_Master_CD
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: staging
+    name: Build Container
+    env:
+      APP_NAME: lab04main
+    steps:
+    # checkout the repo
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+      
+    # Build and push the image
+    - name: 'Build and push image'
+      uses: azure/docker-login@v1
+      with:
+        login-server: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+    - run: |
+        docker build . -t ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ github.sha }}
+        docker push ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ github.sha }}
+      working-directory: ./docker
+  staging:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: staging
+    name: Deploy to Staging
+    env:
+      NAMESPACE: staging
+      CLUSTER_NAME: lab4
+      CLUSTER_RESOURCE_GROUP: rg-cloud101-lab04-mel-01
+      SECRET: akspull
+      APP_NAME: lab04main
+    steps:
+    # checkout the repo
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+    # Login to Azure AD
+    - name: 'Az CLI login'
+      uses: azure/login@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+    # Set the target Azure Kubernetes Service (AKS) cluster. 
+    - uses: azure/aks-set-context@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+        cluster-name: ${{ env.CLUSTER_NAME }}
+        resource-group: ${{ env.CLUSTER_RESOURCE_GROUP }}
+    # Create namespace if doesn't exist
+    - run: |
+        kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o json | kubectl apply -f -  
+    # Create image pull secret for ACR
+    - uses: azure/k8s-create-secret@v1
+      with:
+        container-registry-url: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        container-registry-username: ${{ secrets.REGISTRY_USERNAME }}
+        container-registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+        secret-name: ${{ env.SECRET }}
+        namespace: ${{ env.NAMESPACE }}
+        arguments: --force true
+    # Deploy app to AKS
+    - uses: azure/k8s-deploy@v1.5
+      with:
+        manifests: |
+          ${{ github.workspace }}/manifests/staging/deployment.yml
+          ${{ github.workspace }}/manifests/staging/service.yml
+          ${{ github.workspace }}/manifests/staging/ingress.yml
+        images: |
+          ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ github.sha }}
+        imagepullsecrets: |
+          ${{ env.SECRET }}
+        namespace: ${{ env.NAMESPACE }}
+  production:
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production
+    name: Deploy to Production
+    env:
+      NAMESPACE: production
+      CLUSTER_NAME: lab4
+      CLUSTER_RESOURCE_GROUP: rg-cloud101-lab04-mel-01
+      SECRET: akspull
+      APP_NAME: lab04main
+    steps:
+    # checkout the repo
+    - name: 'Checkout GitHub Action'
+      uses: actions/checkout@main
+    # Login to Azure AD
+    - name: 'Az CLI login'
+      uses: azure/login@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+    # Set the target Azure Kubernetes Service (AKS) cluster. 
+    - uses: azure/aks-set-context@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+        cluster-name: ${{ env.CLUSTER_NAME }}
+        resource-group: ${{ env.CLUSTER_RESOURCE_GROUP }}
+    # Create namespace if doesn't exist
+    - run: |
+        kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o json | kubectl apply -f -  
+    # Create image pull secret for ACR
+    - uses: azure/k8s-create-secret@v1
+      with:
+        container-registry-url: ${{ secrets.REGISTRY_LOGIN_SERVER }}
+        container-registry-username: ${{ secrets.REGISTRY_USERNAME }}
+        container-registry-password: ${{ secrets.REGISTRY_PASSWORD }}
+        secret-name: ${{ env.SECRET }}
+        namespace: ${{ env.NAMESPACE }}
+        arguments: --force true
+    # Deploy app to AKS
+    - uses: azure/k8s-deploy@v1.5
+      with:
+        manifests: |
+          ${{ github.workspace }}/manifests/prod/deployment.yml
+          ${{ github.workspace }}/manifests/prod/service.yml
+          ${{ github.workspace }}/manifests/prod/ingress.yml
+        images: |
+          ${{ secrets.REGISTRY_LOGIN_SERVER }}/${{ env.APP_NAME }}:${{ github.sha }}
+        imagepullsecrets: |
+          ${{ env.SECRET }}
+        namespace: ${{ env.NAMESPACE }}
