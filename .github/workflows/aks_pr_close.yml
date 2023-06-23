@@ -1,0 +1,33 @@
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+name: Pull_Request_Close_CD
+
+jobs:
+  destroy-aks-deployment:
+    runs-on: ubuntu-latest
+    environment: test
+    env:
+      CLUSTER_NAME: lab4
+      CLUSTER_RESOURCE_GROUP: rg-cloud101-lab04-mel-01
+      SECRET: akspull
+      APP_NAME: lab04pr
+    steps:
+    - run: |
+        echo "NAMESPACE=$(echo ${{ github.head_ref }} | sed --expression='s+/+-+g')" >> $GITHUB_ENV
+      shell: bash
+    # Login to Azure AD
+    - name: 'Az CLI login'
+      uses: azure/login@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+    # Set the target Azure Kubernetes Service (AKS) cluster. 
+    - uses: azure/aks-set-context@v1
+      with:
+        creds: ${{secrets.AZURE_CREDENTIALS}}
+        cluster-name: ${{ env.CLUSTER_NAME }}
+        resource-group: ${{ env.CLUSTER_RESOURCE_GROUP }}
+    # Create namespace if doesn't exist
+    - run: |
+        kubectl delete namespace ${{ env.NAMESPACE }}
