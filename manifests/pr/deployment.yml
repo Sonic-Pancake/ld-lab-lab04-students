@@ -1,0 +1,19 @@
+apiVersion : apps/v1
+kind: Deployment
+metadata:
+  name: eycloudfundamentalslab 
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eycloudfundamentalslab
+  template:
+    metadata:
+      labels:
+        app: eycloudfundamentalslab 
+    spec:
+      containers:
+        - name: eycloudfundamentalslab 
+          image: eycontainerregistrylab4.azurecr.io/lab04pr
+          ports:
+          - containerPort: 80
